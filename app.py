@@ -1,4 +1,4 @@
-import json, sys, asyncio, websockets
+import json, sys, asyncio, websockets, os
 
 USERS = []
 
