@@ -1,4 +1,4 @@
-import json, os, asyncio, websockets
+import json, sys, asyncio, websockets
 
 USERS = []
 
@@ -16,6 +16,9 @@ def get_index(uid):
 	usr = find_user_by_id(uid)
 	idx = USERS.index(usr)
 	return idx
+
+def set_engaged(idx,val=True):
+	USERS[idx]['engaged'] = val
 
 def get_users(usr_array):
 	users = []
@@ -62,13 +65,14 @@ async def register(client):
 
 async def broadcast(msg):
 	parsed_msg = json.loads(msg)
+	sender = find_user_by_id(parsed_msg['from'])
 	recvr = find_user_by_id(parsed_msg['to'])
 
 	if parsed_msg['type'] == 'call_request':
 		if recvr and recvr['engaged'] == False:
 			data = {
 				'type': 'offer',
-				'sender': recvr['name'],
+				'sender': parsed_msg['name'],
 				'id': parsed_msg['from'],
 				'offer': parsed_msg['offer'],
 				'candidate': parsed_msg['candidate']
@@ -76,15 +80,31 @@ async def broadcast(msg):
 			await recvr['conn'].send(json.dumps(data))
 		else:
 			resp = {'type': 'rejected'}
-			await recvr['conn'].send(json.dumps(resp))
+			await sender['conn'].send(json.dumps(resp))
 
-	elif parsed_msg['type'] == 'rejected':
+	if parsed_msg['type'] == 'call_answer':
+		data = {
+			'type': 'answer',
+			'sender': parsed_msg['name'],
+			'id': parsed_msg['from'],
+			'answer': parsed_msg['answer'],
+			'candidate': parsed_msg['candidate']
+		}
+		set_engaged(recvr['uid'])
+		set_engaged(sender['uid'])
+		await recvr['conn'].send(json.dumps(data))
+
+	if parsed_msg['type'] == 'rejected':
 		reject_msg = {'type': 'rejected'}
 		await recvr['conn'].send(json.dumps(reject_msg))
 
-	elif parsed_msg['type'] == 'call_aborted':
+	if parsed_msg['type'] == 'call_aborted':
 		abort_msg = {'type': 'call_aborted'}
 		await recvr['conn'].send(json.dumps(abort_msg))
+
+	if parsed_msg['type'] == 'call_ended':
+		idx = get_index(parsed_msg['from'])
+		set_engaged(idx,False)
 
 async def handle_client(client, path):
 	await register(client)
@@ -100,7 +120,6 @@ async def handle_client(client, path):
 			break
 
 
-#print('[LISTENING] Server listening on localhost:9000')
 server = websockets.serve(handle_client,"",int(os.environ['PORT']))
 asyncio.get_event_loop().run_until_complete(server)
 asyncio.get_event_loop().run_forever()
